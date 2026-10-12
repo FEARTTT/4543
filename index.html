@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Stick Viewer</title>
+<style>
+:root{--bg:#00ff00;--panel:#00ff00;--ink:#00210a;--mute:#00330f;--line:#003d12;--accent:#1d4ed8;--dz:rgba(0,0,0,.15);--trail:29,78,216;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+*{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;min-height:100%}
+.wrap{max-width:900px;margin:0 auto;padding:20px 16px}
+header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:16px}
+h1{font-size:18px;margin:0;letter-spacing:.5px}
+#status{font-size:13px;color:var(--mute)}
+.ctrl{display:flex;flex-wrap:wrap;gap:16px;align-items:center;font-size:13px;color:var(--mute);margin-bottom:16px}
+select,input[type=range]{accent-color:var(--accent)}
+select{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:4px 8px;max-width:100%}
+.sticks{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}
+.card{background:var(--panel);border:0;border-radius:14px;padding:16px;text-align:center}
+.card h2{margin:0 0 8px;font-size:13px;color:var(--mute);font-weight:600;letter-spacing:1px}
+canvas{width:100%;max-width:300px;aspect-ratio:1;display:block;margin:0 auto}
+.vals{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:10px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}
+.vals div{background:var(--bg);border-radius:6px;padding:6px 2px}
+.vals b{display:block;color:var(--mute);font-size:10px;font-weight:600}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header><h1>STICK VIEWER</h1><div id="status">Press a button on your controller…</div></header>
+<div class="ctrl">
+<label>Pad <select id="pad"></select></label>
+<label>Deadzone <input type="range" id="dz" min="0" max="0.5" step="0.01" value="0.1"> <span id="dzv">0.10</span></label>
+<label><input type="checkbox" id="trail" checked> Trail</label>
+<label>Trail length <input type="range" id="tl" min="1" max="400" step="1" value="40"> <span id="tlv">40</span></label>
+</div>
+<div class="sticks">
+<div class="card"><h2>LEFT STICK</h2><canvas id="L" width="300" height="300"></canvas><div class="vals" id="Lv"></div></div>
+<div class="card"><h2>RIGHT STICK</h2><canvas id="R" width="300" height="300"></canvas><div class="vals" id="Rv"></div></div>
+</div>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const tl=$('tl'),tlv=$('tlv'),sel=$('pad'),dzIn=$('dz'),dzv=$('dzv'),trailOn=$('trail'),status=$('status');
+const sticks=[{c:$('L'),v:$('Lv'),ax:[0,1],btn:10,t:[]},{c:$('R'),v:$('Rv'),ax:[2,3],btn:11,t:[]}];
+sticks.forEach(s=>{s.ctx=s.c.getContext('2d');s.v.innerHTML=['X','Y','MAG','ANG'].map(k=>`<div><b>${k}</b><span></span></div>`).join('');s.spans=[...s.v.querySelectorAll('span')]});
+dzIn.oninput=()=>dzv.textContent=(+dzIn.value).toFixed(2);
+tl.oninput=()=>tlv.textContent=tl.value;
+let idx=0;
+sel.onchange=()=>idx=+sel.value;
+function pads(){return [...(navigator.getGamepads?navigator.getGamepads():[])].filter(Boolean)}
+function refresh(){
+  const p=pads();const cur=sel.value;
+  sel.innerHTML=p.map(g=>`<option value="${g.index}">${g.index}: ${g.id.slice(0,50).replace(/</g,'')}</option>`).join('');
+  if(p.find(g=>g.index==cur))sel.value=cur;else if(p.length){idx=p[0].index;sel.value=idx}
+}
+addEventListener('gamepadconnected',refresh);addEventListener('gamepaddisconnected',refresh);
+function draw(s,x,y,pressed){
+  const ctx=s.ctx,W=s.c.width,cx=W/2,R=W/2-14,dz=+dzIn.value;
+  ctx.clearRect(0,0,W,W);
+  ctx.lineWidth=2;ctx.strokeStyle=css('--line');
+  ctx.beginPath();ctx.arc(cx,cx,R,0,7);ctx.stroke();
+  ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(cx-R,cx);ctx.lineTo(cx+R,cx);ctx.moveTo(cx,cx-R);ctx.lineTo(cx,cx+R);ctx.stroke();
+  ctx.fillStyle=css('--dz');ctx.beginPath();ctx.arc(cx,cx,R*dz,0,7);ctx.fill();
+  const px=cx+x*R,py=cx+y*R;
+  if(trailOn.checked){
+    s.t.push([px,py]);while(s.t.length>+tl.value)s.t.shift();
+    const rgb=css('--trail');
+    s.t.forEach((q,i)=>{ctx.fillStyle=`rgba(${rgb},${i/s.t.length*.6})`;ctx.beginPath();ctx.arc(q[0],q[1],6,0,7);ctx.fill()});
+  }else s.t=[];
+  ctx.strokeStyle=css('--accent');ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(cx,cx);ctx.lineTo(px,py);ctx.stroke();
+  ctx.fillStyle=css('--accent');ctx.globalAlpha=pressed?1:.85;
+  ctx.beginPath();ctx.arc(px,py,pressed?20:16,0,7);ctx.fill();ctx.globalAlpha=1;
+  ctx.strokeStyle=css('--panel');ctx.lineWidth=3;ctx.beginPath();ctx.arc(px,py,pressed?20:16,0,7);ctx.stroke();
+}
+function loop(){
+  const g=(navigator.getGamepads?navigator.getGamepads():[])[idx]||pads()[0];
+  if(g){
+    status.textContent=g.id.slice(0,60).replace(/</g,'');
+    sticks.forEach(s=>{
+      let x=g.axes[s.ax[0]]||0,y=g.axes[s.ax[1]]||0;
+      const mag=Math.min(1,Math.hypot(x,y));
+      if(mag<+dzIn.value){x=0;y=0}
+      const m=Math.min(1,Math.hypot(x,y));
+      const ang=m?((Math.atan2(-y,x)*180/Math.PI)+360)%360:0;
+      draw(s,x,y,!!(g.buttons[s.btn]&&g.buttons[s.btn].pressed));
+      [x.toFixed(2),y.toFixed(2),m.toFixed(2),ang.toFixed(0)+'°'].forEach((t,i)=>s.spans[i].textContent=t);
+    });
+  }else{
+    status.textContent='Press a button on your controller…';
+    sticks.forEach(s=>{draw(s,0,0,false);s.spans.forEach(e=>e.textContent='-')});
+  }
+  requestAnimationFrame(loop);
+}
+refresh();loop();
+</script>
+</body>
+</html>
